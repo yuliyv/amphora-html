@@ -1,0 +1,23 @@
+{
+  "main": [
+    {
+      "_ref": "{{ ARTICLE_URI }}",
+      "content": [
+        {
+          "_ref": "localhost.example.com/_components/paragraph/instance"
+        },
+        {
+          "_ref": "localhost.example.com/_components/image/instance"
+        },
+        {
+          "_ref": "localhost.example.com/_components/paragraph/instance",
+          "componentVariation": "paragraph_a"
+        },
+        {
+          "_ref": "localhost.example.com/_components/image/instance"
+        }
+      ]
+    }
+  ],
+  "_version": 1.1
+}

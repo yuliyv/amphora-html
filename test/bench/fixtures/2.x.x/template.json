@@ -1,0 +1,47 @@
+{
+  "site": {
+
+  },
+  "locals": {
+      "site": {},
+      "edit": true,
+      "url": "{{ PAGE_URI }}.html",
+      "extension": "html"
+  },
+  "_self": "{{ PAGE_URI }}",
+  "_pageData": {
+      "main": [
+          "{{ ARTICLE_URI }}"
+      ]
+  },
+  "_layoutRef": "{{ LAYOUT_URI }}",
+  "_components": [
+    "layout",
+    "article",
+    "image",
+    "paragraph"
+  ],
+  "_componentSchemas": [
+      {
+          "name": "layout",
+          "schema": "components/layout/schema.yaml"
+      }
+  ],
+  "_data": {
+      "main": [
+          {
+              "_ref": "{{ ARTICLE_URI }}",
+              "content": [
+                {
+                  "_ref": "localhost.example.com/_components/paragraph/instance"
+                },
+                {
+                  "_ref": "localhost.example.com/_components/image/instance"
+                }
+              ]
+          }
+      ],
+      "_version": 1.0,
+      "template": "layout"
+  }
+}
