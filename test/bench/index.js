@@ -1,6 +1,7 @@
 'use strict';
 
-const fs = require('fs'),
+const yargs = require('yargs'),
+  fs = require('fs'),
   child_process = require('child_process'),
   path = require('path'),
   util = require('util'),
@@ -12,7 +13,6 @@ const fs = require('fs'),
   lstat = util.promisify(fs.lstat),
   exec = util.promisify(child_process.exec),
   noop = function () {},
-  runSuite = true,
   pageUri = 'localhost.example.com/_pages/instance',
   layoutUri = 'localhost.example.com/_components/layout/instance',
   articleUri = 'localhost.example.com/_components/article/instance',
@@ -224,54 +224,79 @@ function addSuite(version) {
  */
 function retrieveLatestVersions(quantity) {
   return exec('npm view amphora-html versions')
-  .then(function (out) {
-    const versionRegExp = /[0-9]+\.[0-9]+\.[0-9]+/g,
-      {stdout, stderr} = out,
-      versions = stdout.match(versionRegExp);
+    .then(function (out) {
+      const versionRegExp = /[0-9]+\.[0-9]+\.[0-9]+/g,
+        {stdout, stderr} = out,
+        versions = stdout.match(versionRegExp);
 
-    if (!_.isEmpty(stderr)) {
-      throw new Error(stderr);
-    }
+      if (!_.isEmpty(stderr)) {
+        throw new Error(stderr);
+      }
 
-    return _.takeRight(versions, quantity);
-  })
-  .catch(function (err) {
-    console.log(err);
-  });
+      return _.takeRight(versions, quantity);
+    })
+    .catch(function (err) {
+      console.log(err);
+    });
 }
 
-retrieveLatestVersions(1)
-  .then(function (latestVersions) {
-    const versions = _.concat(latestVersions, 'latest');
+function launch(argv) {
+  retrieveLatestVersions(argv.previousVersionQuantity)
+    .then(function (latestVersions) {
+      const versions = _.concat(latestVersions, 'latest');
 
-    process.env.CLAY_LOG_PRETTY = 'true';
-    // process.env.LOG = 'warn';
-    process.env.LOG = 'info';
+      process.env.CLAY_LOG_PRETTY = 'true';
+      process.env.LOG = argv.logLevel;
 
-    return Promise.all(
-      versions.map(function (version) {
-        return getOrCreateLibraryVersion(version)
-          .then(function () {
-            return addSuite(version);
-          });
-      })
-    );
-  })
-  .then(function () {
-    if (runSuite) {
-      suite
-        // add listeners
-        .on('cycle', function (event) {
-          console.log(String(event.target));
+      return Promise.all(
+        versions.map(function (version) {
+          return getOrCreateLibraryVersion(version)
+            .then(function () {
+              return addSuite(version);
+            });
         })
-        .on('complete', function () {
-          for (let i = 0; i < this.length; i++) {
-            console.log(this[i].name, this[i].hz);
-          }
-          console.log('Fastest is ' + this.filter('fastest').map('name'));
-          process.exit(0);
-        })
-        // run async
-        .run({async:true});
-    }
-  });
+      );
+    })
+    .then(function () {
+      if (argv.runSuite) {
+        suite
+          // add listeners
+          .on('cycle', function (event) {
+            console.log(String(event.target));
+          })
+          .on('complete', function () {
+            for (let i = 0; i < this.length; i++) {
+              console.log(this[i].name, this[i].hz);
+            }
+            console.log('Fastest is ' + this.filter('fastest').map('name'));
+            process.exit(0);
+          })
+          // run async
+          .run({async:true});
+      }
+    });
+}
+
+yargs
+  .usage('$0 <cmd> [args]')
+  .command('benchmark', 'run the benchmarker', (yargs) => {
+    yargs.positional('previousVersionQuantity', {
+      type: 'number',
+      default: 1,
+      describe: 'quantity of previous versions to run against'
+    });
+
+    yargs.positional('logLevel', {
+      type: 'string',
+      default: 'warn',
+      describe: 'log level for output from amphora-html'
+    });
+
+    yargs.positional('runSuite', {
+      type: 'boolean',
+      default: false,
+      describe: 'actually run the benchmark suite'
+    });
+  }, launch)
+  .help()
+  .argv;

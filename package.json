@@ -22,12 +22,14 @@
     "traverse": "^0.6.6"
   },
   "devDependencies": {
+    "benchmark": "^2.1.4",
     "chai": "^3.5.0",
     "coveralls": "^3.0.0",
     "eslint": "^3.19.0",
     "istanbul": "^0.4.5",
     "mocha": "^3.2.0",
-    "sinon": "1.17.7"
+    "sinon": "1.17.7",
+    "yargs": "^12.0.1"
   },
   "repository": {
     "type": "git",
