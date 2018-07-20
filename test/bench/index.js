@@ -4,60 +4,29 @@ const fs = require('fs'),
   child_process = require('child_process'),
   path = require('path'),
   util = require('util'),
-  bluebird = require('bluebird'),
   _ = require('lodash'),
   Benchmark = require('benchmark'),
   suite = new Benchmark.Suite(),
-  readFile = bluebird.promisify(fs.readFile),
-  mkdir = bluebird.promisify(fs.mkdir),
-  lstat = bluebird.promisify(fs.lstat),
+  readFile = util.promisify(fs.readFile),
+  mkdir = util.promisify(fs.mkdir),
+  lstat = util.promisify(fs.lstat),
   exec = util.promisify(child_process.exec),
   noop = function () {},
   runSuite = true,
   pageUri = 'localhost.example.com/_pages/instance',
   layoutUri = 'localhost.example.com/_components/layout/instance',
   articleUri = 'localhost.example.com/_components/article/instance',
-  amphoraHtmlVersionMaps = {
-    latest: {
-      template: '3.x.x',
-      processFixtureTemplate: function (fixtureTemplate) {
-        return fixtureTemplate
-          .replace(/{{ LAYOUT_URI }}/g, layoutUri)
-          .replace(/{{ ARTICLE_URI }}/g, articleUri)
-          .replace(/{{ PAGE_URI }}/g, pageUri);
-      },
-      makeRequestGenerator: function () {
-        const lib = require('../../index'),
-          meta = buildMeta();
-
-        lib.configureRender({
-          editAssetTags: {
-            styles: process.env.INLINE_EDIT_STYLES === 'true',
-            scripts: process.env.INLINE_EDIT_SCRIPTS === 'true'
-          },
-          cacheBuster: 'abc'
-        });
-
-        return function (data) {
-          return lib.render(data, meta, buildResponseObj())
-            .then(noop)
-            .catch(function (error) {
-              console.log(error);
-              process.exit(1);
-            });
-        };
-      }
-    },
-    '2.1.0': {
+  processFixtureTemplate = function (fixtureTemplate) {
+    return fixtureTemplate
+      .replace(/{{ LAYOUT_URI }}/g, layoutUri)
+      .replace(/{{ ARTICLE_URI }}/g, articleUri)
+      .replace(/{{ PAGE_URI }}/g, pageUri);
+  },
+  versionMap = {
+    v2: {
       template: '2.x.x',
-      processFixtureTemplate: function (fixtureTemplate) {
-        return fixtureTemplate
-          .replace(/{{ LAYOUT_URI }}/g, layoutUri)
-          .replace(/{{ ARTICLE_URI }}/g, articleUri)
-          .replace(/{{ PAGE_URI }}/g, pageUri);
-      },
-      makeRequestGenerator: function () {
-        const lib = require('./amphora-html@2.1.0');
+      makeRequestGenerator: function (version) {
+        const lib = require(`./amphora-html@${version}`);
 
         lib.addRootPath(path.dirname('./'));
         lib.configureRender({
@@ -78,16 +47,34 @@ const fs = require('fs'),
         };
       }
     },
-    '3.4.5': {
+    v3: {
       template: '3.x.x',
-      processFixtureTemplate: function (fixtureTemplate) {
-        return fixtureTemplate
-          .replace(/{{ LAYOUT_URI }}/g, layoutUri)
-          .replace(/{{ ARTICLE_URI }}/g, articleUri)
-          .replace(/{{ PAGE_URI }}/g, pageUri);
-      },
+      makeRequestGenerator: function (version) {
+        const lib = require(`./amphora-html@${version}`),
+          meta = buildMeta();
+
+        lib.configureRender({
+          editAssetTags: {
+            styles: process.env.INLINE_EDIT_STYLES === 'true',
+            scripts: process.env.INLINE_EDIT_SCRIPTS === 'true'
+          },
+          cacheBuster: 'abc'
+        });
+
+        return function (data) {
+          return lib.render(data, meta, buildResponseObj())
+            .then(noop)
+            .catch(function (error) {
+              console.log(error);
+              process.exit(1);
+            });
+        };
+      }
+    },
+    latest: {
+      template: '3.x.x',
       makeRequestGenerator: function () {
-        const lib = require('./amphora-html@3.4.5'),
+        const lib = require('../../index'),
           meta = buildMeta();
 
         lib.configureRender({
@@ -189,15 +176,16 @@ function getOrCreateLibraryVersion(version) {
 }
 
 function addSuite(version) {
-  const versionHelpers = amphoraHtmlVersionMaps[version],
-    {template, processFixtureTemplate, makeRequestGenerator} = versionHelpers;
+  const majorVersion = version === 'latest' ? version : `v${_.head(version)}`,
+    versionHelpers = versionMap[majorVersion],
+    {template, makeRequestGenerator} = versionHelpers;
 
   return readFile(`./fixtures/${template}/template.json`, 'utf8')
     .then(function (data) {
       try {
         const parameterizedTemplate = processFixtureTemplate(data),
           parsed = JSON.parse(parameterizedTemplate),
-          makeRequest = makeRequestGenerator();
+          makeRequest = makeRequestGenerator(version);
 
         return makeRequest(parsed)
           .then(function () {
@@ -229,38 +217,61 @@ function addSuite(version) {
     });
 }
 
-// process.env.LOG = 'warn';
-process.env.LOG = 'info';
-process.env.CLAY_LOG_PRETTY = 'true';
+/**
+ * Retrieve a quantity of past versions of the amphora-html package.
+ * @param {number} quantity
+ * @return {string[]}
+ */
+function retrieveLatestVersions(quantity) {
+  return exec('npm view amphora-html versions')
+  .then(function (out) {
+    const versionRegExp = /[0-9]+\.[0-9]+\.[0-9]+/g,
+      {stdout, stderr} = out,
+      versions = stdout.match(versionRegExp);
 
-Promise.all(
-  _.keys(amphoraHtmlVersionMaps)
-    // .filter(function (version) {
-    //   // return version == 'latest';
-    //   // return version == '2.1.0';
-    //   return version == '3.4.5';
-    // })
-    .map(function (version) {
-      return getOrCreateLibraryVersion(version)
-        .then(function () {
-          return addSuite(version);
-        });
-    })
-).then(function () {
-  if (runSuite) {
-    suite
-      // add listeners
-      .on('cycle', function (event) {
-        console.log(String(event.target));
+    if (!_.isEmpty(stderr)) {
+      throw new Error(stderr);
+    }
+
+    return _.takeRight(versions, quantity);
+  })
+  .catch(function (err) {
+    console.log(err);
+  });
+}
+
+retrieveLatestVersions(1)
+  .then(function (latestVersions) {
+    const versions = _.concat(latestVersions, 'latest');
+
+    process.env.CLAY_LOG_PRETTY = 'true';
+    // process.env.LOG = 'warn';
+    process.env.LOG = 'info';
+
+    return Promise.all(
+      versions.map(function (version) {
+        return getOrCreateLibraryVersion(version)
+          .then(function () {
+            return addSuite(version);
+          });
       })
-      .on('complete', function () {
-        for (let i = 0; i < this.length; i++) {
-          console.log(this[i].name, this[i].hz);
-        }
-        console.log('Fastest is ' + this.filter('fastest').map('name'));
-        process.exit(0);
-      })
-      // run async
-      .run({async:true});
-  }
-});
+    );
+  })
+  .then(function () {
+    if (runSuite) {
+      suite
+        // add listeners
+        .on('cycle', function (event) {
+          console.log(String(event.target));
+        })
+        .on('complete', function () {
+          for (let i = 0; i < this.length; i++) {
+            console.log(this[i].name, this[i].hz);
+          }
+          console.log('Fastest is ' + this.filter('fastest').map('name'));
+          process.exit(0);
+        })
+        // run async
+        .run({async:true});
+    }
+  });
