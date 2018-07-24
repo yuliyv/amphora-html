@@ -7,8 +7,10 @@ const yargs = require('yargs'),
   util = require('util'),
   _ = require('lodash'),
   Benchmark = require('benchmark'),
+  clayLog = require('clay-log'),
   suite = new Benchmark.Suite(),
   readFile = util.promisify(fs.readFile),
+  writeFile = util.promisify(fs.writeFile),
   mkdir = util.promisify(fs.mkdir),
   lstat = util.promisify(fs.lstat),
   exec = util.promisify(child_process.exec),
@@ -96,6 +98,7 @@ const yargs = require('yargs'),
       }
     }
   };
+let log;
 
 /**
  * amphora-html@3.x.x separated options from the data so we use this helper to generate "options"
@@ -240,13 +243,64 @@ function retrieveLatestVersions(quantity) {
     });
 }
 
+function initializeLogger(logLevel) {
+  process.env.CLAY_LOG_PRETTY = 'true';
+  process.env.LOG = logLevel;
+
+  clayLog.init({
+    name: 'amphora-html-benchmark',
+    prettyPrint: true,
+    meta: {
+      amphoraHtmlVersion: require('../../package.json').version
+    }
+  });
+
+  log = clayLog.getLogger();
+}
+
+function generateAssetFiles() {
+  const cssFiles = [
+    // base css
+    'public/css/article.css',
+    'public/css/image.css',
+    'public/css/layout.css',
+    'public/css/paragraph.css',
+
+    // v3 and variations css
+    'public/css/article._default.css',
+    'public/css/image._default.css',
+    'public/css/layout._default.css',
+    'public/css/paragraph._default.css',
+    'public/css/paragraph_a._default.css',
+
+    // v3 for variation detection
+    'stylesguides/website/components/article.css',
+    'stylesguides/website/components/image.css',
+    'stylesguides/website/components/layout.css',
+    'stylesguides/website/components/paragraph_a.css',
+    'stylesguides/website/components/paragraph.css'
+  ];
+
+  Promise.all(
+    cssFiles.map(function (fileName) {
+      return writeFile(fileName, '', 'utf8');
+    })
+  ).then(function () {
+    log.info('Finished generating CSS files');
+    process.exit(0);
+  }).catch(function (error) {
+    log.error('Failed to generate CSS files', {
+      message: error.message
+    });
+    process.exit(1);
+  });
+}
+
 function launch(argv) {
+  initializeLogger(argv.logLevel);
   retrieveLatestVersions(argv.previousVersionQuantity)
     .then(function (latestVersions) {
       const versions = _.concat(latestVersions, 'latest');
-
-      process.env.CLAY_LOG_PRETTY = 'true';
-      process.env.LOG = argv.logLevel;
 
       return Promise.all(
         versions.map(function (version) {
@@ -277,8 +331,31 @@ function launch(argv) {
     });
 }
 
+/**
+ * Clean generated files and folders necessary for running the benchmark.
+ */
+function clean() {
+  initializeLogger('info');
+  exec('rm -rf amphora@*')
+    .then(function () {
+      return exec('rm public/css/*.css');
+    })
+    .then(function () {
+      return exec('rm styleguides/website/components/*.css');
+    })
+    .then(function () {
+      log.info('Finished cleaning generated files and folders');
+      process.exit(0);
+    })
+    .catch(function (error) {
+      console.log('Failed to clean generated files and folders', error);
+      process.exit(1);
+    });
+}
+
 yargs
   .usage('$0 <cmd> [args]')
+  .command('clean', 'clean generated files and folders', () => {}, clean)
   .command('benchmark', 'run the benchmarker', (yargs) => {
     yargs.positional('previousVersionQuantity', {
       type: 'number',
