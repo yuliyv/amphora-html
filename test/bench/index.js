@@ -274,12 +274,14 @@ function generateAssetFiles() {
     'public/css/paragraph_a._default.css',
 
     // v3 for variation detection
-    'stylesguides/website/components/article.css',
-    'stylesguides/website/components/image.css',
-    'stylesguides/website/components/layout.css',
-    'stylesguides/website/components/paragraph_a.css',
-    'stylesguides/website/components/paragraph.css'
+    'styleguides/website/components/article.css',
+    'styleguides/website/components/image.css',
+    'styleguides/website/components/layout.css',
+    'styleguides/website/components/paragraph_a.css',
+    'styleguides/website/components/paragraph.css'
   ];
+
+  initializeLogger('info');
 
   Promise.all(
     cssFiles.map(function (fileName) {
@@ -336,12 +338,12 @@ function launch(argv) {
  */
 function clean() {
   initializeLogger('info');
-  exec('rm -rf amphora@*')
+  return exec('rm -rf amphora@*')
     .then(function () {
-      return exec('rm public/css/*.css');
+      return exec('rm -f public/css/*.css');
     })
     .then(function () {
-      return exec('rm styleguides/website/components/*.css');
+      return exec('rm -f styleguides/website/components/*.css');
     })
     .then(function () {
       log.info('Finished cleaning generated files and folders');
@@ -356,6 +358,7 @@ function clean() {
 yargs
   .usage('$0 <cmd> [args]')
   .command('clean', 'clean generated files and folders', () => {}, clean)
+  .command('generate', 'generate files', () => {}, generateAssetFiles)
   .command('benchmark', 'run the benchmarker', (yargs) => {
     yargs.positional('previousVersionQuantity', {
       type: 'number',

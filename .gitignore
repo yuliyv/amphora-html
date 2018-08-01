@@ -41,3 +41,5 @@ jspm_packages
 
 # Other AmphoraHTML versions for benchmarking
 amphora-html@*/
+
+test/bench/**/*.css
