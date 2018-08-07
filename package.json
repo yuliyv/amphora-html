@@ -22,10 +22,11 @@
     "traverse": "^0.6.6"
   },
   "devDependencies": {
-    "benchmark": "^2.1.4",
     "coveralls": "^3.0.0",
     "eslint": "^3.19.0",
-    "jest": "^23.4.1"
+    "jest": "^23.4.1",
+    "nanobench": "^2.1.1",
+    "yargs": "^12.0.1"
   },
   "repository": {
     "type": "git",

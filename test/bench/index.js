@@ -6,9 +6,8 @@ const yargs = require('yargs'),
   path = require('path'),
   util = require('util'),
   _ = require('lodash'),
-  Benchmark = require('benchmark'),
+  bench = require('nanobench'),
   clayLog = require('clay-log'),
-  suite = new Benchmark.Suite(),
   readFile = util.promisify(fs.readFile),
   writeFile = util.promisify(fs.writeFile),
   mkdir = util.promisify(fs.mkdir),
@@ -43,7 +42,7 @@ const yargs = require('yargs'),
           return lib.render(data, buildResponseObj())
             .then(noop)
             .catch(function (error) {
-              console.log(error);
+              log.error(`amphora-html@${version}#render failed.`, error);
               process.exit(1);
             });
         };
@@ -67,7 +66,7 @@ const yargs = require('yargs'),
           return lib.render(data, meta, buildResponseObj())
             .then(noop)
             .catch(function (error) {
-              console.log(error);
+              log.error(`amphora-html@${version}#render failed.`, error);
               process.exit(1);
             });
         };
@@ -91,7 +90,7 @@ const yargs = require('yargs'),
           return lib.render(data, meta, buildResponseObj())
             .then(noop)
             .catch(function (error) {
-              console.log(error);
+              log.error(`amphora-html@latest#render failed.`, error);
               process.exit(1);
             });
         };
@@ -120,6 +119,10 @@ function buildMeta() {
   };
 }
 
+/**
+ * 
+ * @return {object}
+ */
 function buildResponseObj() {
   return {
     status: function () {
@@ -128,9 +131,7 @@ function buildResponseObj() {
       };
     },
     type: noop,
-    send: function () {
-      // console.log(arguments);
-    }
+    send: noop
   };
 }
 
@@ -181,41 +182,44 @@ function getOrCreateLibraryVersion(version) {
 function addSuite(version) {
   const majorVersion = version === 'latest' ? version : `v${_.head(version)}`,
     versionHelpers = versionMap[majorVersion],
-    {template, makeRequestGenerator} = versionHelpers;
+    {template, makeRequestGenerator} = versionHelpers,
+    renderQuantity = 1000;
+  let parsed, makeRequest;
 
   return readFile(`./fixtures/${template}/template.json`, 'utf8')
     .then(function (data) {
-      try {
-        const parameterizedTemplate = processFixtureTemplate(data),
-          parsed = JSON.parse(parameterizedTemplate),
-          makeRequest = makeRequestGenerator(version);
+      const parameterizedTemplate = processFixtureTemplate(data);
 
-        return makeRequest(parsed)
-          .then(function () {
-            suite.add(
-              `amphoraHtml@${version}#render`,
-              function (deferred) {
-                return makeRequest(parsed)
-                  .then(function () {
-                    deferred.resolve();
-                  })
-                  .catch(function (error) {
-                    console.log(error);
-                    process.exit(1);
-                  });
-              },
-              {
-                defer: true
-              }
-            );
-          });
-      } catch (error) {
-        console.log(error);
-        process.exit(1);
-      }
+      parsed = JSON.parse(parameterizedTemplate),
+      makeRequest = makeRequestGenerator(version);
+
+      return makeRequest(parsed);
+    })
+    .then(function () {
+      return new Promise(function (resolve, reject) {
+        bench(`amphoraHtml@${version}#render ${renderQuantity} times`, function(b) {
+          let count = 0;
+          function promiser() {
+            count += 1;
+            return makeRequest(parsed)
+              .then(function () {
+                if (count >= renderQuantity) {
+                  b.end();
+                  resolve();
+                  return;
+                }
+
+                return promiser();
+              });
+          }
+
+          b.start();
+          promiser();
+        });
+      });
     })
     .catch(function (error) {
-      console.log(error);
+      log.error(error);
       process.exit(1);
     });
 }
@@ -239,7 +243,7 @@ function retrieveLatestVersions(quantity) {
       return _.takeRight(versions, quantity);
     })
     .catch(function (err) {
-      console.log(err);
+      log.error('Failed retrieving versions', err);
     });
 }
 
@@ -300,9 +304,13 @@ function generateAssetFiles() {
 
 function launch(argv) {
   initializeLogger(argv.logLevel);
-  retrieveLatestVersions(argv.previousVersionQuantity)
-    .then(function (latestVersions) {
-      const versions = _.concat(latestVersions, 'latest');
+  log.info('Launching benchmark...');
+
+  retrieveLatestVersions(1)
+    .then(function (previousVersions) {
+      const versions = argv.runVersion === 'latest'
+        ? ['latest']
+        : previousVersions;
 
       return Promise.all(
         versions.map(function (version) {
@@ -312,24 +320,6 @@ function launch(argv) {
             });
         })
       );
-    })
-    .then(function () {
-      if (argv.runSuite) {
-        suite
-          // add listeners
-          .on('cycle', function (event) {
-            console.log(String(event.target));
-          })
-          .on('complete', function () {
-            for (let i = 0; i < this.length; i++) {
-              console.log(this[i].name, this[i].hz);
-            }
-            console.log('Fastest is ' + this.filter('fastest').map('name'));
-            process.exit(0);
-          })
-          // run async
-          .run({async:true});
-      }
     });
 }
 
@@ -350,7 +340,7 @@ function clean() {
       process.exit(0);
     })
     .catch(function (error) {
-      console.log('Failed to clean generated files and folders', error);
+      log.error('Failed to clean generated files and folders', error);
       process.exit(1);
     });
 }
@@ -360,10 +350,11 @@ yargs
   .command('clean', 'clean generated files and folders', () => {}, clean)
   .command('generate', 'generate files', () => {}, generateAssetFiles)
   .command('benchmark', 'run the benchmarker', (yargs) => {
-    yargs.positional('previousVersionQuantity', {
-      type: 'number',
-      default: 1,
-      describe: 'quantity of previous versions to run against'
+    yargs.positional('runVersion', {
+      type: 'string',
+      default: 'latest',
+      choices: ['latest', 'previous'],
+      describe: ''
     });
 
     yargs.positional('logLevel', {
